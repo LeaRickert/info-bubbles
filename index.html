@@ -360,6 +360,10 @@ const BG_HUE_SHIFT = -15;                    // bottom stop hue offset, for a li
 const BG_DEBOUNCE_MS = 500;                  // apply only after the pointer has been still this long
 const BG_THROTTLE_MS = 2000;                 // and no more often than this
 
+const DRIFT_EVERY = [1.5, 4];  // seconds between course changes (min, max)
+const DRIFT_MAX = 60;          // px: the furthest a single course change can move baseX
+const DRIFT_EASE = 1.2;        // how quickly baseX settles on its new course (higher = quicker)
+
 const TITLE_TRAVEL_MS = 2800;  // how slowly the title glides to centre
 const UNWRAP_MS = 700;         // title widens to a single line before it starts to grow
 const DESC_DELAY_MS = 300;     // pause after arriving before description fades in
@@ -377,12 +381,20 @@ function maxSize() {
 
 function bubbleFontSize(size) { return Math.round(size * 0.1); }
 
+// horizontal range a bubble's centre line may use, leaving room for its sway
+function xRange(b) {
+  const min = b.wobbleAmp;
+  return [min, Math.max(min, window.innerWidth - b.size - b.wobbleAmp)];
+}
+
 function randomiseBubble(b, startAnywhere) {
   const max = maxSize();
   b.size = rand(MIN_SIZE, max);
   b.speed = rand(MIN_SPEED, MAX_SPEED);
   b.wobbleAmp = rand(8, 30);
-  b.baseX = rand(b.wobbleAmp, Math.max(b.wobbleAmp, window.innerWidth - b.size - b.wobbleAmp));
+  b.baseX = rand(...xRange(b));
+  b.goalX = b.baseX;
+  b.nextShift = rand(...DRIFT_EVERY);
   b.wobbleFreq = rand(0.3, 0.8);
   b.phase = rand(0, Math.PI * 2);
   b.t = 0;
@@ -492,6 +504,14 @@ function frame(now) {
     if (!b.popped && !b.hovered) {
       b.y -= b.speed * dt;
       b.t += dt;
+      if (b.t >= b.nextShift) {
+        // pick a new X within DRIFT_MAX of the last course, then head for a random point between the last course and it
+        const [lo, hi] = xRange(b);
+        const newX = Math.min(hi, Math.max(lo, b.goalX + rand(-DRIFT_MAX, DRIFT_MAX)));
+        b.goalX = rand(Math.min(b.goalX, newX), Math.max(b.goalX, newX));
+        b.nextShift = b.t + rand(...DRIFT_EVERY);
+      }
+      b.baseX += (b.goalX - b.baseX) * (1 - Math.exp(-DRIFT_EASE * dt));
       if (b.y < -b.size) {          // floated off the top → back to bottom
         randomiseBubble(b, false);
       }
@@ -512,7 +532,9 @@ window.addEventListener("resize", () => {
       b.el.style.width = b.el.style.height = max + "px";
       b.el.style.setProperty("--fs", bubbleFontSize(max) + "px");
     }
-    b.baseX = Math.min(b.baseX, Math.max(0, window.innerWidth - b.size));
+    const [lo, hi] = xRange(b);
+    b.baseX = Math.min(Math.max(b.baseX, lo), hi);
+    b.goalX = Math.min(Math.max(b.goalX, lo), hi);
   }
 });
 
