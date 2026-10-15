@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bubbles</title>
 <style>
+  @property --bg-top    { syntax: "<color>"; inherits: true; initial-value: #0b1d3a; }
+  @property --bg-bottom { syntax: "<color>"; inherits: true; initial-value: #1d6f8f; }
   :root {
+    transition: --bg-top 3s ease, --bg-bottom 3s ease;
     --bg-top: hsl(215 60% 12%);
     --bg-bottom: hsl(195 55% 42%);
     --ink: #f4fbff;
@@ -177,7 +180,57 @@
   #close.show { opacity: 1; pointer-events: auto; }
   #close:hover { background: rgba(255,255,255,.15); }
 
+  /* ---------- static layout: list on mobile, grid on desktop ---------- */
+  #layout-toggle {
+    position: fixed;
+    top: 1rem; right: 1.25rem;
+    z-index: 9;
+    width: 2.5rem; height: 2.5rem;
+    padding: 0;
+    display: grid; place-items: center;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.5);
+    border-radius: 50%;
+    color: var(--ink);
+    cursor: pointer;
+    transition: background .2s;
+  }
+  #layout-toggle:hover { background: rgba(255,255,255,.2); }
+  #layout-toggle svg { width: 1.2rem; height: 1.2rem; }
+  #layout-toggle .icon-float { display: none; }
+  .static-mode #layout-toggle .icon-float { display: block; }
+  .static-mode #layout-toggle .icon-grid { display: none; }
+
+  #grid { display: none; }
+  .static-mode, .static-mode body { height: auto; min-height: 100%; overflow-y: auto; }
+  .static-mode body { background-attachment: fixed; }
+  .static-mode.focus-open, .static-mode.focus-open body { overflow: hidden; }
+  .static-mode #grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 2rem;
+    padding: 5rem 1.25rem 3rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  @media (min-width: 700px) {
+    .static-mode #grid {
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 2.5rem 1.5rem;
+    }
+  }
+  .static-mode .bubble {
+    position: relative;
+    transform: none !important;
+    width: 240px !important;
+    height: 240px !important;
+    --fs: 24px !important;
+  }
+  .static-mode .bubble-title { opacity: 1; }
+
   @media (prefers-reduced-motion: reduce) {
+    :root { transition: none; }
     .pop-ring, .droplet { animation-duration: .01s; }
   }
 </style>
@@ -187,6 +240,16 @@
 <div id="overlay"></div>
 <h2 id="title"></h2>
 <div id="description"></div>
+<button id="layout-toggle" aria-pressed="false" aria-label="Switch to grid layout" title="Switch layout">
+  <svg class="icon-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+    <rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/>
+    <rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>
+  </svg>
+  <svg class="icon-float" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+    <circle cx="8" cy="15.5" r="5"/><circle cx="16.5" cy="7" r="3.5"/>
+  </svg>
+</button>
+<div id="grid"></div>
 <button id="close" aria-label="Close">&times;</button>
 
 <script>
@@ -248,7 +311,8 @@ const TOP_L_MIN = 6,  TOP_L_MAX = 20;        // y: top → bottom, lightness % o
 const BOTTOM_L_MIN = 30, BOTTOM_L_MAX = 55;  // same for the bottom stop
 const BG_SAT = 58;                           // saturation %
 const BG_HUE_SHIFT = -15;                    // bottom stop hue offset, for a little depth
-const BG_EASE = 4;                           // higher = follows the mouse faster
+const BG_DEBOUNCE_MS = 500;                  // apply only after the pointer has been still this long
+const BG_THROTTLE_MS = 2000;                 // and no more often than this
 
 const TITLE_TRAVEL_MS = 2800;  // how slowly the title glides to centre
 const UNWRAP_MS = 700;         // title widens to a single line before it starts to grow
@@ -318,29 +382,65 @@ ITEMS.forEach((item, i) => {
   bubbles.push(b);
 });
 
-const bg = { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5 };
-window.addEventListener("pointermove", e => {
-  bg.tx = Math.min(1, Math.max(0, e.clientX / window.innerWidth));
-  bg.ty = Math.min(1, Math.max(0, e.clientY / window.innerHeight));
-});
+const bg = { x: 0.5, y: 0.5 };
 const lerp = (a, b, t) => a + (b - a) * t;
-function updateBackground(dt) {
-  const k = 1 - Math.exp(-BG_EASE * dt);   // frame-rate independent smoothing
-  bg.x += (bg.tx - bg.x) * k;
-  bg.y += (bg.ty - bg.y) * k;
-  const hue = lerp(HUE_MIN, HUE_MAX, bg.x);
-  const topL = lerp(TOP_L_MIN, TOP_L_MAX, bg.y);
-  const botL = lerp(BOTTOM_L_MIN, BOTTOM_L_MAX, bg.y);
+
+function applyBackground() {
+  const hue  = Math.round(lerp(HUE_MIN, HUE_MAX, bg.x));
+  const topL = Math.round(lerp(TOP_L_MIN, TOP_L_MAX, bg.y));
+  const botL = Math.round(lerp(BOTTOM_L_MIN, BOTTOM_L_MAX, bg.y));
   const root = document.documentElement.style;
   root.setProperty("--bg-top", `hsl(${hue} ${BG_SAT}% ${topL}%)`);
   root.setProperty("--bg-bottom", `hsl(${hue + BG_HUE_SHIFT} ${BG_SAT}% ${botL}%)`);
 }
 
+// Debounce: wait until the pointer has been still for BG_DEBOUNCE_MS.
+// Throttle: then apply at most once every BG_THROTTLE_MS.
+let bgDebounce = null, bgPending = null, bgLastApplied = -Infinity;
+window.addEventListener("pointermove", e => {
+  bg.x = Math.min(1, Math.max(0, e.clientX / window.innerWidth));
+  bg.y = Math.min(1, Math.max(0, e.clientY / window.innerHeight));
+  clearTimeout(bgDebounce);
+  bgDebounce = setTimeout(() => {
+    if (bgPending) return;                     // a throttled update is already queued; it reads the latest values
+    const wait = Math.max(0, BG_THROTTLE_MS - (performance.now() - bgLastApplied));
+    bgPending = setTimeout(() => {
+      bgPending = null;
+      bgLastApplied = performance.now();
+      applyBackground();
+    }, wait);
+  }, BG_DEBOUNCE_MS);
+});
+applyBackground();
+
+/* ---------- layout mode: floating bubbles vs. static list/grid ---------- */
+const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+const grid = document.getElementById("grid");
+const layoutBtn = document.getElementById("layout-toggle");
+let staticMode = false;
+
+function setStaticMode(on) {
+  staticMode = on;
+  document.documentElement.classList.toggle("static-mode", on);
+  layoutBtn.setAttribute("aria-pressed", String(on));
+  layoutBtn.setAttribute("aria-label", on ? "Switch to floating bubbles" : "Switch to grid layout");
+  for (const b of bubbles) {
+    (on ? grid : document.body).appendChild(b.el);
+    b.hovered = false;
+    b.el.classList.remove("paused");
+    if (!on) b.el.style.transform = ""; // the loop takes over again
+  }
+  window.scrollTo(0, 0);
+}
+layoutBtn.addEventListener("click", () => setStaticMode(!staticMode));
+reduceMQ.addEventListener("change", e => setStaticMode(e.matches));
+if (reduceMQ.matches) setStaticMode(true);
+
 let last = performance.now();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1); // clamp after tab switches
   last = now;
-  updateBackground(dt);
+  if (staticMode) { requestAnimationFrame(frame); return; }
 
   for (const b of bubbles) {
     if (!b.popped && !b.hovered) {
@@ -433,20 +533,23 @@ function pop(b) {
   titleEl.style.transform = `translate(${cx}px, ${cy}px) translate(-50%, -50%)`;
   void titleEl.offsetWidth; // commit start state
 
+  document.documentElement.classList.add("focus-open");
   overlay.classList.add("active");
   // phase 1: widen in place until the title is a single line
-  titleEl.style.transition = `width ${UNWRAP_MS}ms ease`;
+  const unwrapMs = reduceMQ.matches ? 0 : UNWRAP_MS;
+  const travelMs = reduceMQ.matches ? 0 : TITLE_TRAVEL_MS;
+  titleEl.style.transition = `width ${unwrapMs}ms ease`;
   titleEl.style.width = Math.max(oneLine, r.width * 0.68) + "px";
 
   // phase 2: lock to one line, then glide to the centre while growing
   timers.push(setTimeout(() => {
     titleEl.style.whiteSpace = "nowrap";
     titleEl.style.width = "max-content";
-    const ease = `${TITLE_TRAVEL_MS}ms cubic-bezier(.45,.05,.25,1)`;
+    const ease = `${travelMs}ms cubic-bezier(.45,.05,.25,1)`;
     titleEl.style.transition = `transform ${ease}, font-size ${ease}`;
     titleEl.style.fontSize = Math.max(32, Math.min(window.innerWidth * 0.05, 64)) + "px";
     titleEl.style.transform = centre;
-  }, UNWRAP_MS));
+  }, unwrapMs));
 
   descEl.innerHTML = b.item.body;
   descEl.scrollTop = 0;
@@ -454,7 +557,7 @@ function pop(b) {
   timers.push(setTimeout(() => {
     descEl.classList.add("show");
     closeBtn.classList.add("show");
-  }, UNWRAP_MS + TITLE_TRAVEL_MS + DESC_DELAY_MS));
+  }, unwrapMs + travelMs + DESC_DELAY_MS));
 }
 
 function close() {
@@ -466,12 +569,13 @@ function close() {
   descEl.classList.remove("show");
   closeBtn.classList.remove("show");
   overlay.classList.remove("active");
+  document.documentElement.classList.remove("focus-open");
   titleEl.style.transition = "opacity 500ms ease";
   titleEl.style.opacity = "0";
 
   // the bubble re-forms at the bottom and starts floating again
   setTimeout(() => {
-    randomiseBubble(b, false);
+    if (!staticMode) randomiseBubble(b, false);
     b.popped = false;
     b.el.classList.remove("hidden");
   }, 500);
