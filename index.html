@@ -365,6 +365,11 @@ const BG_THROTTLE_MS = 2000;                 // and no more often than this
 const MAX_SWAY_RATIO = 0.6;
 const MIN_WOBBLE_FREQ = 0.12;  // Hz floor, so capping never makes the sway vanish into a stall
 
+// Respawn spacing
+const SPAWN_CANDIDATES = 12;   // random X positions tried for each respawn
+const SPAWN_PICKS = 3;         // then choose randomly among this many roomiest ones
+const MIN_SPAWN_GAP_S = 1.5;   // minimum seconds between one respawn and the next
+
 const DRIFT_EVERY = [1.5, 4];  // seconds between course changes (min, max)
 const DRIFT_MAX = 60;          // px: the furthest a single course change can move baseX
 const DRIFT_EASE = 1.2;        // how quickly baseX settles on its new course (higher = quicker)
@@ -392,6 +397,39 @@ function xRange(b) {
   return [min, Math.max(min, window.innerWidth - b.size - b.wobbleAmp)];
 }
 
+// How much an existing bubble matters to a spawn at the bottom edge: 1 when it is
+// at the bottom, falling to 0 a full screen height above.
+function spawnWeight(o) {
+  const distFromSpawnLine = Math.max(0, window.innerHeight - (o.y + o.size));
+  return Math.max(0, 1 - distFromSpawnLine / window.innerHeight);
+}
+
+// Choose a baseX for bubble b that avoids bubbles already near the bottom:
+// try several random positions, score each by the gap to its nearest neighbour,
+// then pick randomly from the best few so the result still looks random.
+function pickSpawnX(b) {
+  const [lo, hi] = xRange(b);
+  const others = bubbles.filter(o => o !== b && !o.popped);
+  if (!others.length) return rand(lo, hi);
+
+  const W = window.innerWidth;
+  const scored = [];
+  for (let i = 0; i < SPAWN_CANDIDATES; i++) {
+    const x = rand(lo, hi);
+    let score = Infinity;
+    for (const o of others) {
+      const gap = Math.abs((x + b.size / 2) - (o.baseX + o.size / 2)) - (b.size + o.size) / 2;
+      score = Math.min(score, gap + (1 - spawnWeight(o)) * W);  // bubbles far above count as far away
+    }
+    scored.push({ x, score });
+  }
+  scored.sort((a, z) => z.score - a.score);
+  const top = scored.slice(0, SPAWN_PICKS);
+  return top[Math.floor(Math.random() * top.length)].x;
+}
+
+let lastSpawnAt = -Infinity;
+
 function randomiseBubble(b, startAnywhere) {
   const max = maxSize();
   b.size = rand(MIN_SIZE, max);
@@ -404,14 +442,20 @@ function randomiseBubble(b, startAnywhere) {
     b.wobbleFreq = Math.max(MIN_WOBBLE_FREQ, maxSwaySpeed / (b.wobbleAmp * Math.PI * 2));
     b.wobbleAmp = Math.min(b.wobbleAmp, maxSwaySpeed / (Math.PI * 2 * b.wobbleFreq));
   }
-  b.baseX = rand(...xRange(b));
+  b.baseX = startAnywhere ? rand(...xRange(b)) : pickSpawnX(b);
   b.goalX = b.baseX;
   b.nextShift = rand(...DRIFT_EVERY);
   b.phase = rand(0, Math.PI * 2);
   b.t = 0;
-  b.y = startAnywhere
-    ? rand(-b.size, window.innerHeight)
-    : window.innerHeight + rand(0, 80);
+  if (startAnywhere) {
+    b.y = rand(-b.size, window.innerHeight);
+  } else {
+    // hold the bubble just off-screen if another one spawned very recently
+    const now = performance.now() / 1000;
+    const wait = Math.max(0, MIN_SPAWN_GAP_S - (now - lastSpawnAt));
+    lastSpawnAt = now + wait;
+    b.y = window.innerHeight + rand(0, 80) + b.speed * wait;
+  }
   b.el.style.width = b.el.style.height = b.size + "px";
   b.el.style.setProperty("--fs", bubbleFontSize(b.size) + "px");
 }
