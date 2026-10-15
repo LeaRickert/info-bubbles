@@ -119,6 +119,50 @@
   }
   #overlay.active { background: rgba(5, 15, 35, .72); pointer-events: auto; }
 
+  /* the modal panel: centred on desktop, almost fullscreen on mobile */
+  #modal {
+    position: fixed;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(720px, calc(100vw - 2rem));
+    max-height: min(86dvh, 820px);
+    display: flex;
+    flex-direction: column;
+    padding: 2rem 1.75rem 1.5rem;
+    background: rgba(8, 20, 45, .82);
+    -webkit-backdrop-filter: blur(14px);
+            backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 1s ease;
+    z-index: 11;
+  }
+  #modal.open { opacity: 1; pointer-events: auto; }
+  @media (max-width: 700px) {
+    #modal {
+      width: calc(100vw - 1.25rem);
+      height: calc(100dvh - 1.25rem);
+      max-height: none;
+      padding: 1.25rem 1rem 1rem;
+      border-radius: 18px;
+    }
+  }
+
+  /* invisible in-flow slot that reserves where the flying title lands */
+  #title-slot {
+    flex: none;
+    margin: 0 2.75rem 1rem;
+    font-weight: normal;
+    letter-spacing: .04em;
+    line-height: 1.15;
+    text-align: center;
+    visibility: hidden;
+  }
+
+  /* the title itself: flies from the bubble to the slot */
   #title {
     position: fixed;
     left: 0; top: 0;
@@ -130,34 +174,32 @@
     text-wrap: balance;
     overflow-wrap: break-word;
     opacity: 0;
-    z-index: 11;
+    z-index: 12;
     pointer-events: none;
     text-shadow: 0 2px 20px rgba(0,0,0,.4);
     will-change: transform, opacity;
   }
 
   #description {
-    position: fixed;
-    left: 50%; top: 50%;
-    width: min(680px, 90vw);
-    max-height: calc(50vh - 3rem);
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
-    /* sits below the title, which rests at the centre */
-    transform: translate(-50%, 2.5rem);
+    overscroll-behavior: contain;
     padding: 0 .5rem;
     font-size: 1.1rem;
     line-height: 1.65;
     text-align: center;
     opacity: 0;
     transition: opacity 1.4s ease;
-    z-index: 11;
     pointer-events: none;
   }
   #description.show { opacity: 1; pointer-events: auto; }
   #description img {
     display: block;
     max-width: 100%;
-    max-height: 32vh;
+    height: auto;
+    max-height: 40vh;
+    object-fit: contain;
     margin: 1rem auto;
     border-radius: 12px;
     box-shadow: 0 8px 30px rgba(0,0,0,.45);
@@ -165,9 +207,9 @@
   #description p { margin: 0 0 1rem; }
 
   #close {
-    position: fixed;
-    top: 1rem; right: 1.25rem;
-    z-index: 12;
+    position: absolute;
+    top: .75rem; right: .75rem;
+    z-index: 2;
     background: none; border: 1px solid rgba(255,255,255,.5);
     color: var(--ink);
     width: 2.5rem; height: 2.5rem;
@@ -239,7 +281,11 @@
 
 <div id="overlay"></div>
 <h2 id="title"></h2>
-<div id="description"></div>
+<div id="modal" role="dialog" aria-modal="true" aria-labelledby="title-slot">
+  <button id="close" aria-label="Close">&times;</button>
+  <h2 id="title-slot"></h2>
+  <div id="description"></div>
+</div>
 <button id="layout-toggle" aria-pressed="false" aria-label="Switch to grid layout" title="Switch layout">
   <svg class="icon-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
     <rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/>
@@ -250,7 +296,7 @@
   </svg>
 </button>
 <div id="grid"></div>
-<button id="close" aria-label="Close">&times;</button>
+
 
 <script>
 /* ======================================================
@@ -477,6 +523,8 @@ const overlay = document.getElementById("overlay");
 const titleEl = document.getElementById("title");
 const descEl  = document.getElementById("description");
 const closeBtn = document.getElementById("close");
+const modalEl = document.getElementById("modal");
+const slotEl = document.getElementById("title-slot");
 let current = null;
 let timers = [];
 
@@ -515,9 +563,14 @@ function pop(b) {
   b.el.classList.add("hidden");
   burst(cx, cy, r.width);
 
+  // fill the modal first so the title's landing spot can be measured
+  descEl.innerHTML = b.item.body;
+  descEl.scrollTop = 0;
+  slotEl.textContent = b.item.title;
+  const target = measureTitleTarget();
+
   // title starts exactly as the in-bubble label (same size, width and wrapping),
-  // then glides to the centre while widening and growing to the focus size
-  const centre = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px) translate(-50%, -50%)`;
+  // then widens to one line, then glides into the modal while growing
   titleEl.textContent = b.item.title;
   titleEl.style.transition = "none";
   titleEl.style.opacity = "1";
@@ -535,29 +588,52 @@ function pop(b) {
 
   document.documentElement.classList.add("focus-open");
   overlay.classList.add("active");
+  modalEl.classList.add("open");
   // phase 1: widen in place until the title is a single line
   const unwrapMs = reduceMQ.matches ? 0 : UNWRAP_MS;
   const travelMs = reduceMQ.matches ? 0 : TITLE_TRAVEL_MS;
   titleEl.style.transition = `width ${unwrapMs}ms ease`;
   titleEl.style.width = Math.max(oneLine, r.width * 0.68) + "px";
 
-  // phase 2: lock to one line, then glide to the centre while growing
+  // phase 2: lock to one line, then glide to the slot while growing
   timers.push(setTimeout(() => {
+    const t = measureTitleTarget();   // re-measure in case the window changed
     titleEl.style.whiteSpace = "nowrap";
     titleEl.style.width = "max-content";
     const ease = `${travelMs}ms cubic-bezier(.45,.05,.25,1)`;
     titleEl.style.transition = `transform ${ease}, font-size ${ease}`;
-    titleEl.style.fontSize = Math.max(32, Math.min(window.innerWidth * 0.05, 64)) + "px";
-    titleEl.style.transform = centre;
+    titleEl.style.fontSize = t.fs + "px";
+    titleEl.style.transform = t.transform;
   }, unwrapMs));
-
-  descEl.innerHTML = b.item.body;
-  descEl.scrollTop = 0;
 
   timers.push(setTimeout(() => {
     descEl.classList.add("show");
     closeBtn.classList.add("show");
   }, unwrapMs + travelMs + DESC_DELAY_MS));
+}
+
+// Where the title ends up: the centre of the (invisible) slot at the top of the modal.
+// The font is the focus size, shrunk if needed so the title fits on one line in the modal.
+function measureTitleTarget() {
+  const maxFs = Math.max(26, Math.min(window.innerWidth * 0.05, 56));
+  slotEl.style.fontSize = maxFs + "px";
+  const avail = slotEl.clientWidth;
+
+  const saved = [titleEl.style.whiteSpace, titleEl.style.width, titleEl.style.fontSize, titleEl.style.transition];
+  titleEl.style.transition = "none";
+  titleEl.style.whiteSpace = "nowrap";
+  titleEl.style.width = "max-content";
+  titleEl.style.fontSize = maxFs + "px";
+  const oneLine = titleEl.offsetWidth;
+  [titleEl.style.whiteSpace, titleEl.style.width, titleEl.style.fontSize, titleEl.style.transition] = saved;
+
+  const fs = oneLine > avail ? Math.max(18, Math.floor(maxFs * avail / oneLine)) : maxFs;
+  slotEl.style.fontSize = fs + "px";            // slot is now exactly one line tall
+  const sr = slotEl.getBoundingClientRect();
+  return {
+    fs,
+    transform: `translate(${sr.left + sr.width / 2}px, ${sr.top + sr.height / 2}px) translate(-50%, -50%)`
+  };
 }
 
 function close() {
@@ -568,6 +644,7 @@ function close() {
 
   descEl.classList.remove("show");
   closeBtn.classList.remove("show");
+  modalEl.classList.remove("open");
   overlay.classList.remove("active");
   document.documentElement.classList.remove("focus-open");
   titleEl.style.transition = "opacity 500ms ease";
@@ -587,9 +664,10 @@ window.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
 
 window.addEventListener("resize", () => {
   if (current && titleEl.style.opacity === "1") {
+    const t = measureTitleTarget();
     titleEl.style.transition = "none";
-    titleEl.style.transform =
-      `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px) translate(-50%, -50%)`;
+    titleEl.style.fontSize = t.fs + "px";
+    titleEl.style.transform = t.transform;
   }
 });
 </script>
