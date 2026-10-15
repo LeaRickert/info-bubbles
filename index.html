@@ -6,8 +6,8 @@
 <title>Bubbles</title>
 <style>
   :root {
-    --bg-top: #0b1d3a;
-    --bg-bottom: #1d6f8f;
+    --bg-top: hsl(215 60% 12%);
+    --bg-bottom: hsl(195 55% 42%);
     --ink: #f4fbff;
   }
   * { box-sizing: border-box; }
@@ -241,6 +241,15 @@ const MIN_SIZE = 200;          // px
 const MAX_SIZE_FRAC = 0.20;    // of page width
 const MIN_SPEED = 18;          // px / second
 const MAX_SPEED = 42;
+/* Background: mouse X sets the hue, mouse Y sets the lightness.
+   The top colour stays dark and the bottom stays light; each has its own limits. */
+const HUE_MIN = 190, HUE_MAX = 300;          // x: left → right
+const TOP_L_MIN = 6,  TOP_L_MAX = 20;        // y: top → bottom, lightness % of the top stop
+const BOTTOM_L_MIN = 30, BOTTOM_L_MAX = 55;  // same for the bottom stop
+const BG_SAT = 58;                           // saturation %
+const BG_HUE_SHIFT = -15;                    // bottom stop hue offset, for a little depth
+const BG_EASE = 4;                           // higher = follows the mouse faster
+
 const TITLE_TRAVEL_MS = 2800;  // how slowly the title glides to centre
 const UNWRAP_MS = 700;         // title widens to a single line before it starts to grow
 const DESC_DELAY_MS = 300;     // pause after arriving before description fades in
@@ -309,10 +318,29 @@ ITEMS.forEach((item, i) => {
   bubbles.push(b);
 });
 
+const bg = { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5 };
+window.addEventListener("pointermove", e => {
+  bg.tx = Math.min(1, Math.max(0, e.clientX / window.innerWidth));
+  bg.ty = Math.min(1, Math.max(0, e.clientY / window.innerHeight));
+});
+const lerp = (a, b, t) => a + (b - a) * t;
+function updateBackground(dt) {
+  const k = 1 - Math.exp(-BG_EASE * dt);   // frame-rate independent smoothing
+  bg.x += (bg.tx - bg.x) * k;
+  bg.y += (bg.ty - bg.y) * k;
+  const hue = lerp(HUE_MIN, HUE_MAX, bg.x);
+  const topL = lerp(TOP_L_MIN, TOP_L_MAX, bg.y);
+  const botL = lerp(BOTTOM_L_MIN, BOTTOM_L_MAX, bg.y);
+  const root = document.documentElement.style;
+  root.setProperty("--bg-top", `hsl(${hue} ${BG_SAT}% ${topL}%)`);
+  root.setProperty("--bg-bottom", `hsl(${hue + BG_HUE_SHIFT} ${BG_SAT}% ${botL}%)`);
+}
+
 let last = performance.now();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1); // clamp after tab switches
   last = now;
+  updateBackground(dt);
 
   for (const b of bubbles) {
     if (!b.popped && !b.hovered) {
