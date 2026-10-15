@@ -25,24 +25,40 @@
     border-radius: 50%;
     cursor: pointer;
     will-change: transform;
+    box-shadow: 0 0 18px rgba(160,230,255,.25);
+    border: 1px solid rgba(255,255,255,.35);
+    transition: filter .3s, box-shadow .3s;
+  }
+  /* optional featured image, semi-transparent and faded toward the rim */
+  .bubble-img {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background-size: cover;
+    background-position: center;
+    opacity: .5;
+    -webkit-mask-image: radial-gradient(circle, #000 55%, transparent 100%);
+            mask-image: radial-gradient(circle, #000 55%, transparent 100%);
+    pointer-events: none;
+    transition: opacity .3s;
+  }
+  .bubble:hover .bubble-img, .bubble.paused .bubble-img { opacity: .7; }
+  /* glass layer sits above the image */
+  .bubble::after {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
     background:
       radial-gradient(circle at 30% 28%, rgba(255,255,255,.85) 0 4%, transparent 14%),
       radial-gradient(circle at 50% 50%, rgba(255,255,255,.04) 55%, rgba(160,230,255,.28) 78%, rgba(255,150,230,.35) 92%, rgba(255,255,255,.55) 100%);
     box-shadow:
       inset 0 0 18px rgba(255,255,255,.35),
       inset -10px -14px 30px rgba(255,120,220,.25),
-      inset 10px 12px 30px rgba(110,220,255,.25),
-      0 0 18px rgba(160,230,255,.25);
-    border: 1px solid rgba(255,255,255,.35);
-    transition: filter .3s, box-shadow .3s;
+      inset 10px 12px 30px rgba(110,220,255,.25);
   }
   .bubble:hover, .bubble.paused {
     filter: brightness(1.25) saturate(1.3);
-    box-shadow:
-      inset 0 0 24px rgba(255,255,255,.5),
-      inset -10px -14px 30px rgba(255,120,220,.35),
-      inset 10px 12px 30px rgba(110,220,255,.35),
-      0 0 34px rgba(190,240,255,.55);
+    box-shadow: 0 0 34px rgba(190,240,255,.55);
   }
   .bubble.hidden { visibility: hidden; pointer-events: none; }
 
@@ -156,16 +172,19 @@
 <script>
 /* ======================================================
    CONTENT — edit this list. `body` is plain HTML, so it
-   can mix paragraphs, images, links, etc.
+   can mix paragraphs, images, links, etc. `image` is an
+   optional featured image shown faintly inside the bubble.
    ====================================================== */
 const ITEMS = [
   {
     title: "Soap & Surface Tension",
+    image: "Tester",
     body: `<p>A bubble is a thin film of water sandwiched between two layers of soap molecules. Surface tension pulls it into a sphere, the shape with the least surface for its volume.</p>
            <img src="https://picsum.photos/seed/soap/800/450" alt="Soap bubbles">`
   },
   {
     title: "Rainbow Colours",
+    image: "https://picsum.photos/seed/rainbow/600/600",
     body: `<p>The swirling colours come from light reflecting off the front and back of the film. As the film thins, different wavelengths cancel and reinforce each other.</p>
            <img src="https://picsum.photos/seed/rainbow/800/450" alt="Colourful reflections">`
   },
@@ -175,6 +194,7 @@ const ITEMS = [
   },
   {
     title: "Giant Bubbles",
+    image: "https://picsum.photos/seed/giant/600/600",
     body: `<p>Add a little glycerin or corn syrup to the mixture and the film lasts far longer, letting street performers build bubbles taller than a person.</p>
            <img src="https://picsum.photos/seed/giant/800/450" alt="A giant bubble">`
   },
@@ -184,6 +204,7 @@ const ITEMS = [
   },
   {
     title: "Underwater",
+    image: "https://picsum.photos/seed/underwater/600/600",
     body: `<p>Divers' bubbles expand as they rise, because the water pressure around them falls. The same effect is why a fizzy drink foams when opened.</p>
            <img src="https://picsum.photos/seed/underwater/800/450" alt="Underwater bubbles">`
   },
@@ -235,6 +256,12 @@ ITEMS.forEach((item, i) => {
   el.setAttribute("role", "button");
   el.setAttribute("tabindex", "0");
   el.setAttribute("aria-label", "Pop bubble " + (i + 1));
+  if (item.image) {
+    const img = document.createElement("div");
+    img.className = "bubble-img";
+    img.style.backgroundImage = `url("${item.image}")`;
+    el.appendChild(img);
+  }
   document.body.appendChild(el);
 
   const b = { el, item, hovered: false, popped: false };
