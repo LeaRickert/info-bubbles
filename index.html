@@ -42,6 +42,25 @@
     transition: opacity .3s;
   }
   .bubble:hover .bubble-img, .bubble.paused .bubble-img { opacity: .7; }
+  /* title shown inside the bubble on hover, wrapped to the circle */
+  .bubble-title {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 68%;
+    transform: translate(-50%, -50%);
+    font-size: var(--fs, 16px);
+    letter-spacing: .04em;
+    line-height: 1.15;
+    text-align: center;
+    text-wrap: balance;
+    overflow-wrap: break-word;
+    text-shadow: 0 1px 8px rgba(0,0,0,.65);
+    opacity: 0;
+    transition: opacity .3s;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .bubble:hover .bubble-title, .bubble.paused .bubble-title { opacity: 1; }
   /* glass layer sits above the image */
   .bubble::after {
     content: "";
@@ -101,11 +120,12 @@
     position: fixed;
     left: 0; top: 0;
     margin: 0;
-    font-size: clamp(2rem, 5vw, 4rem);
     font-weight: normal;
     letter-spacing: .04em;
+    line-height: 1.15;
     text-align: center;
-    white-space: nowrap;
+    text-wrap: balance;
+    overflow-wrap: break-word;
     opacity: 0;
     z-index: 11;
     pointer-events: none;
@@ -222,6 +242,7 @@ const MAX_SIZE_FRAC = 0.20;    // of page width
 const MIN_SPEED = 18;          // px / second
 const MAX_SPEED = 42;
 const TITLE_TRAVEL_MS = 2800;  // how slowly the title glides to centre
+const UNWRAP_MS = 700;         // title widens to a single line before it starts to grow
 const DESC_DELAY_MS = 300;     // pause after arriving before description fades in
 
 /* ======================================================
@@ -234,6 +255,8 @@ function maxSize() {
   // 20% of page width, but never below the 200px minimum
   return Math.max(MIN_SIZE, window.innerWidth * MAX_SIZE_FRAC);
 }
+
+function bubbleFontSize(size) { return Math.round(size * 0.1); }
 
 function randomiseBubble(b, startAnywhere) {
   const max = maxSize();
@@ -248,6 +271,7 @@ function randomiseBubble(b, startAnywhere) {
     ? rand(-b.size, window.innerHeight)
     : window.innerHeight + rand(0, 80);
   b.el.style.width = b.el.style.height = b.size + "px";
+  b.el.style.setProperty("--fs", bubbleFontSize(b.size) + "px");
 }
 
 ITEMS.forEach((item, i) => {
@@ -262,6 +286,10 @@ ITEMS.forEach((item, i) => {
     img.style.backgroundImage = `url("${item.image}")`;
     el.appendChild(img);
   }
+  const label = document.createElement("div");
+  label.className = "bubble-title";
+  label.textContent = item.title;
+  el.appendChild(label);
   document.body.appendChild(el);
 
   const b = { el, item, hovered: false, popped: false };
@@ -305,7 +333,11 @@ requestAnimationFrame(frame);
 window.addEventListener("resize", () => {
   const max = maxSize();
   for (const b of bubbles) {
-    if (b.size > max) { b.size = max; b.el.style.width = b.el.style.height = max + "px"; }
+    if (b.size > max) {
+      b.size = max;
+      b.el.style.width = b.el.style.height = max + "px";
+      b.el.style.setProperty("--fs", bubbleFontSize(max) + "px");
+    }
     b.baseX = Math.min(b.baseX, Math.max(0, window.innerWidth - b.size));
   }
 });
@@ -355,20 +387,38 @@ function pop(b) {
   b.el.classList.add("hidden");
   burst(cx, cy, r.width);
 
-  // title: starts where the bubble was, then drifts slowly to the page centre
+  // title starts exactly as the in-bubble label (same size, width and wrapping),
+  // then glides to the centre while widening and growing to the focus size
+  const centre = `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px) translate(-50%, -50%)`;
   titleEl.textContent = b.item.title;
   titleEl.style.transition = "none";
-  titleEl.style.opacity = "0";
+  titleEl.style.opacity = "1";
+  titleEl.style.whiteSpace = "normal";
+  titleEl.style.width = r.width * 0.68 + "px";
+  titleEl.style.fontSize = bubbleFontSize(r.width) + "px";
+  // measure the single-line width at the starting font size
+  titleEl.style.whiteSpace = "nowrap";
+  titleEl.style.width = "max-content";
+  const oneLine = titleEl.offsetWidth + 2;
+  titleEl.style.whiteSpace = "normal";
+  titleEl.style.width = r.width * 0.68 + "px";
   titleEl.style.transform = `translate(${cx}px, ${cy}px) translate(-50%, -50%)`;
-  void titleEl.offsetWidth; // commit start position
+  void titleEl.offsetWidth; // commit start state
 
   overlay.classList.add("active");
-  titleEl.style.transition =
-    `transform ${TITLE_TRAVEL_MS}ms cubic-bezier(.45,.05,.25,1), opacity 700ms ease`;
-  // rest slightly above centre so the description has room beneath
-  titleEl.style.transform =
-    `translate(${window.innerWidth / 2}px, ${window.innerHeight / 2}px) translate(-50%, -50%)`;
-  titleEl.style.opacity = "1";
+  // phase 1: widen in place until the title is a single line
+  titleEl.style.transition = `width ${UNWRAP_MS}ms ease`;
+  titleEl.style.width = Math.max(oneLine, r.width * 0.68) + "px";
+
+  // phase 2: lock to one line, then glide to the centre while growing
+  timers.push(setTimeout(() => {
+    titleEl.style.whiteSpace = "nowrap";
+    titleEl.style.width = "max-content";
+    const ease = `${TITLE_TRAVEL_MS}ms cubic-bezier(.45,.05,.25,1)`;
+    titleEl.style.transition = `transform ${ease}, font-size ${ease}`;
+    titleEl.style.fontSize = Math.max(32, Math.min(window.innerWidth * 0.05, 64)) + "px";
+    titleEl.style.transform = centre;
+  }, UNWRAP_MS));
 
   descEl.innerHTML = b.item.body;
   descEl.scrollTop = 0;
@@ -376,7 +426,7 @@ function pop(b) {
   timers.push(setTimeout(() => {
     descEl.classList.add("show");
     closeBtn.classList.add("show");
-  }, TITLE_TRAVEL_MS + DESC_DELAY_MS));
+  }, UNWRAP_MS + TITLE_TRAVEL_MS + DESC_DELAY_MS));
 }
 
 function close() {
