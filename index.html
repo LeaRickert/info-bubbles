@@ -360,6 +360,11 @@ const BG_HUE_SHIFT = -15;                    // bottom stop hue offset, for a li
 const BG_DEBOUNCE_MS = 500;                  // apply only after the pointer has been still this long
 const BG_THROTTLE_MS = 2000;                 // and no more often than this
 
+// Sideways sway speed is capped relative to rise speed, so slow bubbles don't look like they're shaking.
+// Peak sway speed = amp * 2π * freq; it may be at most MAX_SWAY_RATIO × the bubble's rise speed.
+const MAX_SWAY_RATIO = 0.6;
+const MIN_WOBBLE_FREQ = 0.12;  // Hz floor, so capping never makes the sway vanish into a stall
+
 const DRIFT_EVERY = [1.5, 4];  // seconds between course changes (min, max)
 const DRIFT_MAX = 60;          // px: the furthest a single course change can move baseX
 const DRIFT_EASE = 1.2;        // how quickly baseX settles on its new course (higher = quicker)
@@ -392,10 +397,16 @@ function randomiseBubble(b, startAnywhere) {
   b.size = rand(MIN_SIZE, max);
   b.speed = rand(MIN_SPEED, MAX_SPEED);
   b.wobbleAmp = rand(8, 30);
+  b.wobbleFreq = rand(0.3, 0.8);
+  // cap peak sway speed: slow the sway first, then (if at the floor) shrink the amplitude
+  const maxSwaySpeed = b.speed * MAX_SWAY_RATIO;
+  if (b.wobbleAmp * Math.PI * 2 * b.wobbleFreq > maxSwaySpeed) {
+    b.wobbleFreq = Math.max(MIN_WOBBLE_FREQ, maxSwaySpeed / (b.wobbleAmp * Math.PI * 2));
+    b.wobbleAmp = Math.min(b.wobbleAmp, maxSwaySpeed / (Math.PI * 2 * b.wobbleFreq));
+  }
   b.baseX = rand(...xRange(b));
   b.goalX = b.baseX;
   b.nextShift = rand(...DRIFT_EVERY);
-  b.wobbleFreq = rand(0.3, 0.8);
   b.phase = rand(0, Math.PI * 2);
   b.t = 0;
   b.y = startAnywhere
