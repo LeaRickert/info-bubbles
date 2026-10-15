@@ -223,7 +223,7 @@
   #close:hover { background: rgba(255,255,255,.15); }
 
   /* ---------- static layout: list on mobile, grid on desktop ---------- */
-  #layout-toggle {
+  #layout-toggle, #settings-toggle {
     position: fixed;
     top: 1rem; right: 1.25rem;
     z-index: 9;
@@ -237,8 +237,45 @@
     cursor: pointer;
     transition: background .2s;
   }
-  #layout-toggle:hover { background: rgba(255,255,255,.2); }
-  #layout-toggle svg { width: 1.2rem; height: 1.2rem; }
+  #layout-toggle:hover, #settings-toggle:hover { background: rgba(255,255,255,.2); }
+  #layout-toggle svg, #settings-toggle svg { width: 1.2rem; height: 1.2rem; }
+  #settings-toggle { top: auto; right: auto; left: 1.25rem; bottom: 1rem; }
+  #settings-toggle[aria-expanded="true"] { background: rgba(255,255,255,.25); }
+  .static-mode #settings-toggle, .static-mode #settings-panel { display: none; }
+
+  #settings-panel {
+    position: fixed;
+    left: 1.25rem; bottom: 4rem;
+    z-index: 9;
+    width: min(280px, calc(100vw - 2.5rem));
+    padding: 1rem 1.1rem 1.1rem;
+    background: rgba(8, 20, 45, .82);
+    -webkit-backdrop-filter: blur(14px);
+            backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    font: .85rem/1.3 system-ui, sans-serif;
+    opacity: 0;
+    transform: translateY(8px);
+    visibility: hidden;
+    transition: opacity .25s, transform .25s, visibility .25s;
+  }
+  #settings-panel.open { opacity: 1; transform: none; visibility: visible; }
+  #settings-panel h3 { margin: 0 0 .75rem; font: 600 .9rem system-ui, sans-serif; letter-spacing: .03em; }
+  #settings-panel label { display: block; margin-bottom: .8rem; }
+  #settings-panel .row { display: flex; justify-content: space-between; margin-bottom: .2rem; }
+  #settings-panel output { font-variant-numeric: tabular-nums; opacity: .8; }
+  #settings-panel input[type=range] { width: 100%; margin: 0; accent-color: #9fdcff; }
+  #settings-panel .note { margin: 0 0 .6rem; opacity: .65; font-size: .75rem; }
+  #settings-panel button {
+    width: 100%; padding: .4rem;
+    background: none; color: inherit;
+    border: 1px solid rgba(255,255,255,.4); border-radius: 8px;
+    font: inherit; cursor: pointer;
+  }
+  #settings-panel button:hover { background: rgba(255,255,255,.12); }
+
   #layout-toggle .icon-float { display: none; }
   .static-mode #layout-toggle .icon-float { display: block; }
   .static-mode #layout-toggle .icon-grid { display: none; }
@@ -295,6 +332,25 @@
     <circle cx="8" cy="15.5" r="5"/><circle cx="16.5" cy="7" r="3.5"/>
   </svg>
 </button>
+<button id="settings-toggle" aria-expanded="false" aria-controls="settings-panel" aria-label="Bubble settings" title="Bubble settings">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>
+  </svg>
+</button>
+<div id="settings-panel" role="group" aria-label="Bubble settings">
+  <h3>Bubble settings</h3>
+  <p class="note">Applies to bubbles as they respawn.</p>
+  <label><span class="row">Minimum size <output id="out-minSize"></output></span>
+    <input type="range" id="in-minSize" min="100" max="400" step="10"></label>
+  <label><span class="row">Minimum speed <output id="out-minSpeed"></output></span>
+    <input type="range" id="in-minSpeed" min="5" max="120" step="1"></label>
+  <label><span class="row">Maximum speed <output id="out-maxSpeed"></output></span>
+    <input type="range" id="in-maxSpeed" min="5" max="150" step="1"></label>
+  <label><span class="row">Max sway ratio <output id="out-maxSwayRatio"></output></span>
+    <input type="range" id="in-maxSwayRatio" min="0" max="2" step="0.05"></label>
+  <button type="button" id="settings-reset">Reset to defaults</button>
+</div>
 <div id="grid"></div>
 
 
@@ -346,10 +402,16 @@ const ITEMS = [
 /* ======================================================
    SETTINGS
    ====================================================== */
-const MIN_SIZE = 200;          // px
 const MAX_SIZE_FRAC = 0.20;    // of page width
-const MIN_SPEED = 18;          // px / second
-const MAX_SPEED = 42;
+
+// Visitor-adjustable; read each time a bubble (re)spawns, so changes only affect the next ones.
+const DEFAULTS = {
+  minSize: 200,        // px
+  minSpeed: 18,        // px / second
+  maxSpeed: 42,
+  maxSwayRatio: 0.6,   // peak sway speed ÷ rise speed (see below)
+};
+const settings = { ...DEFAULTS };
 /* Background: mouse X sets the hue, mouse Y sets the lightness.
    The top colour stays dark and the bottom stays light; each has its own limits. */
 const HUE_MIN = 190, HUE_MAX = 300;          // x: left → right
@@ -361,8 +423,7 @@ const BG_DEBOUNCE_MS = 500;                  // apply only after the pointer has
 const BG_THROTTLE_MS = 2000;                 // and no more often than this
 
 // Sideways sway speed is capped relative to rise speed, so slow bubbles don't look like they're shaking.
-// Peak sway speed = amp * 2π * freq; it may be at most MAX_SWAY_RATIO × the bubble's rise speed.
-const MAX_SWAY_RATIO = 0.6;
+// Peak sway speed = amp * 2π * freq; it may be at most settings.maxSwayRatio × the bubble's rise speed.
 const MIN_WOBBLE_FREQ = 0.12;  // Hz floor, so capping never makes the sway vanish into a stall
 
 // Respawn spacing
@@ -386,7 +447,7 @@ const bubbles = [];
 
 function maxSize() {
   // 20% of page width, but never below the 200px minimum
-  return Math.max(MIN_SIZE, window.innerWidth * MAX_SIZE_FRAC);
+  return Math.max(settings.minSize, window.innerWidth * MAX_SIZE_FRAC);
 }
 
 function bubbleFontSize(size) { return Math.round(size * 0.1); }
@@ -432,12 +493,12 @@ let lastSpawnAt = -Infinity;
 
 function randomiseBubble(b, startAnywhere) {
   const max = maxSize();
-  b.size = rand(MIN_SIZE, max);
-  b.speed = rand(MIN_SPEED, MAX_SPEED);
+  b.size = rand(settings.minSize, max);
+  b.speed = rand(settings.minSpeed, settings.maxSpeed);
   b.wobbleAmp = rand(8, 30);
   b.wobbleFreq = rand(0.3, 0.8);
   // cap peak sway speed: slow the sway first, then (if at the floor) shrink the amplitude
-  const maxSwaySpeed = b.speed * MAX_SWAY_RATIO;
+  const maxSwaySpeed = b.speed * settings.maxSwayRatio;
   if (b.wobbleAmp * Math.PI * 2 * b.wobbleFreq > maxSwaySpeed) {
     b.wobbleFreq = Math.max(MIN_WOBBLE_FREQ, maxSwaySpeed / (b.wobbleAmp * Math.PI * 2));
     b.wobbleAmp = Math.min(b.wobbleAmp, maxSwaySpeed / (Math.PI * 2 * b.wobbleFreq));
@@ -525,6 +586,55 @@ window.addEventListener("pointermove", e => {
   }, BG_DEBOUNCE_MS);
 });
 applyBackground();
+
+/* ---------- visitor settings panel ---------- */
+const SETTINGS_DEBOUNCE_MS = 400;
+const settingsBtn = document.getElementById("settings-toggle");
+const settingsPanel = document.getElementById("settings-panel");
+const fmt = {
+  minSize: v => v + "px",
+  minSpeed: v => v + " px/s",
+  maxSpeed: v => v + " px/s",
+  maxSwayRatio: v => (+v).toFixed(2),
+};
+const inputs = {};
+for (const key of Object.keys(DEFAULTS)) {
+  inputs[key] = { input: document.getElementById("in-" + key), out: document.getElementById("out-" + key) };
+}
+let settingsTimer = null;
+
+function showSettingValues() {
+  for (const [key, { input, out }] of Object.entries(inputs)) {
+    input.value = pending[key];
+    out.textContent = fmt[key](pending[key]);
+  }
+}
+const pending = { ...settings };      // what the sliders show; copied to `settings` after the debounce
+
+function onSettingInput(key) {
+  pending[key] = +inputs[key].input.value;
+  // keep min speed ≤ max speed: the slider the visitor isn't touching gets pushed along
+  if (key === "minSpeed" && pending.minSpeed > pending.maxSpeed) pending.maxSpeed = pending.minSpeed;
+  if (key === "maxSpeed" && pending.maxSpeed < pending.minSpeed) pending.minSpeed = pending.maxSpeed;
+  showSettingValues();
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(() => Object.assign(settings, pending), SETTINGS_DEBOUNCE_MS);
+}
+for (const key of Object.keys(inputs)) inputs[key].input.addEventListener("input", () => onSettingInput(key));
+
+document.getElementById("settings-reset").addEventListener("click", () => {
+  Object.assign(pending, DEFAULTS);
+  showSettingValues();
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(() => Object.assign(settings, pending), SETTINGS_DEBOUNCE_MS);
+});
+
+function setSettingsOpen(open) {
+  settingsPanel.classList.toggle("open", open);
+  settingsBtn.setAttribute("aria-expanded", String(open));
+}
+settingsBtn.addEventListener("click", () => setSettingsOpen(!settingsPanel.classList.contains("open")));
+showSettingValues();
 
 /* ---------- layout mode: floating bubbles vs. static list/grid ---------- */
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -737,7 +847,10 @@ function close() {
 
 overlay.addEventListener("click", close);
 closeBtn.addEventListener("click", close);
-window.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+window.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (current) close(); else setSettingsOpen(false);
+});
 
 window.addEventListener("resize", () => {
   if (current && titleEl.style.opacity === "1") {
