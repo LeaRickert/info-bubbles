@@ -1,0 +1,26 @@
+{
+  "name": "bubblefy",
+  "version": "0.1.0",
+  "description": "Turn a list of content into floating bubbles that pop open into a modal.",
+  "type": "module",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": ["src"],
+  "sideEffects": false,
+  "keywords": ["bubbles", "ui", "animation", "modal", "non-hierarchical"],
+  "scripts": {
+    "dev": "vite demo",
+    "build:demo": "vite build demo --outDir dist --emptyOutDir",
+    "preview": "vite preview demo --outDir dist"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
+}

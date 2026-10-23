@@ -6,25 +6,67 @@ A single-page experiment: bubbles drift slowly up the screen. Hover one to pause
 
 Mostly to make something fun and artsy. It's also a small exploration of how **non-hierarchical information** could be presented. There are no menus, ordering or categories. Each piece of content is a bubble, and visitors stumble on things by chance rather than navigating a tree.
 
-It was also an experiment in building with prompt iteration only. None of the code was written by hand. The whole page, `index.html`, came out of a series of short, iterative prompts to Claude Code, each one changing or adding a behavior. The evolution below follows that conversation in order.
+The whole thing, originally a single `index.html`, came out of a series of short, iterative prompts to Claude Code, each one changing or adding a behavior. The evolution below follows that conversation in order.
 
-## Run it
+## Install
 
-No build step and no dependencies. Open `index.html` in a browser.
+```bash
+npm install bubblefy
+```
 
-The sample entries load placeholder photos from `picsum.photos`, so those need an internet connection. Replace them with your own images.
-
-## Adding your own content
-
-Edit the `ITEMS` list near the top of the script in `index.html`:
+## Use it
 
 ```js
-{
-  title: "Rainbow Colours",
-  image: "https://…/photo.jpg",   // optional: faint featured image inside the bubble
-  body: `<p>Any HTML: text, images, links…</p>`
-}
+import { bubblefy } from "bubblefy";
+
+const bubbles = bubblefy(
+  [
+    {
+      title: "Rainbow Colours",
+      image: "https://…/photo.jpg",   // optional: faint featured image inside the bubble
+      body: `<p>Any HTML: text, images, links…</p>`  // or a DOM Node
+    },
+  ],
+  { container: "#sky", background: true }
+);
+
+bubbles.destroy(); // removes every element, listener and timer it added
 ```
+
+Styles are injected automatically, so there is nothing else to import. `body` strings are inserted as HTML, so only pass content you trust.
+
+The container needs a height (the default, `document.body`, needs `html, body { height: 100% }`).
+
+### Options
+
+| Option | Default | |
+| --- | --- | --- |
+| `container` | `document.body` | Element or selector the bubbles float in. |
+| `settings` | see below | `minSize`, `minSpeed`, `maxSpeed`, `maxSwayRatio`. |
+| `layoutToggle` | `true` | Button to switch between floating and static layouts. |
+| `settingsPanel` | `false` | Gear and panel that lets visitors tweak `settings`. |
+| `background` | `false` | Gradient on the container that follows the pointer. |
+| `static` | reduced-motion | Start in the static layout. |
+| `onOpen`, `onClose` | | `(item, index) => void` callbacks. |
+
+The returned instance has `open(index)`, `close()`, `setStatic(on)`, `updateSettings(partial)` and `destroy()`.
+
+### Theming
+
+Override these on `:root`: `--bb-ink`, `--bb-font`, `--bb-ui-font`, `--bb-panel-bg`, `--bb-overlay-bg`. All class names are prefixed `bb-`.
+
+## Run the demo
+
+```bash
+npm install
+npm run dev
+```
+
+The demo (`demo/index.html`) loads placeholder photos from `picsum.photos`, so it needs an internet connection. `npm run build:demo` produces a static site in `demo/dist`.
+
+## Adding your own content to the demo
+
+Edit the `items` list in `demo/index.html`.
 
 ## How it behaves
 
@@ -51,10 +93,14 @@ Each step was a prompt in the chat.
 9. **Wandering paths:** `baseX` is nudged to a random point between its last value and a new one, so bubbles no longer rise in straight lines. It was then adjusted twice. Large swings were capped, and the sway speed was limited relative to rise speed so slow bubbles don't look like they're shaking.
 10. **Better respawn spacing:** discussed several ideas, including column buckets. Testing showed that trying several random positions and choosing among the roomiest few worked much better. Respawns are also kept at least 1.5 seconds apart.
 11. **Visitor controls:** a gear opens a settings panel with debounced sliders. The values only affect bubbles that respawn afterwards, and existing bubbles are left alone.
+12. **Convert to npm-style package:** first stage at transforming into a reusable package format 
 
 ## Files
 
-- `index.html` is the whole project: markup, styles and script.
+- `src/index.js` is the library: `bubblefy()`.
+- `src/styles.js` holds the CSS, injected on first use.
+- `src/index.d.ts` has the TypeScript types.
+- `demo/index.html` is the demo page.
 - `README.md` is this file.
 
 ## Notes and limitations

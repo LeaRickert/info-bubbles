@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bubblefy demo</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+</style>
+</head>
+<body>
+<script type="module">
+import { bubblefy } from "../src/index.js";
+
+// `body` is plain HTML, so it can mix paragraphs, images, links, etc.
+// `image` is an optional featured image shown faintly inside the bubble.
+const items = [
+  {
+    title: "Soap & Surface Tension",
+    image: "https://picsum.photos/seed/soap/600/600",
+    body: `<p>A bubble is a thin film of water sandwiched between two layers of soap molecules. Surface tension pulls it into a sphere, the shape with the least surface for its volume.</p>
+           <img src="https://picsum.photos/seed/soap/800/450" alt="Soap bubbles">`
+  },
+  {
+    title: "Rainbow Colours",
+    image: "https://picsum.photos/seed/rainbow/600/600",
+    body: `<p>The swirling colours come from light reflecting off the front and back of the film. As the film thins, different wavelengths cancel and reinforce each other.</p>
+           <img src="https://picsum.photos/seed/rainbow/800/450" alt="Colourful reflections">`
+  },
+  {
+    title: "Why They Pop",
+    body: `<p>Evaporation and gravity slowly thin the top of the film until it can no longer hold together. Touch is quicker: dry fingers break the film instantly.</p>`
+  },
+  {
+    title: "Giant Bubbles",
+    image: "https://picsum.photos/seed/giant/600/600",
+    body: `<p>Add a little glycerin or corn syrup to the mixture and the film lasts far longer, letting street performers build bubbles taller than a person.</p>
+           <img src="https://picsum.photos/seed/giant/800/450" alt="A giant bubble">`
+  },
+  {
+    title: "Bubbles in Art",
+    body: `<p>From Dutch <em>vanitas</em> paintings to modern installations, bubbles have long stood for beauty that is fragile and fleeting.</p>`
+  },
+  {
+    title: "Underwater",
+    image: "https://picsum.photos/seed/underwater/600/600",
+    body: `<p>Divers' bubbles expand as they rise, because the water pressure around them falls. The same effect is why a fizzy drink foams when opened.</p>
+           <img src="https://picsum.photos/seed/underwater/800/450" alt="Underwater bubbles">`
+  },
+  {
+    title: "Foam",
+    body: `<p>When bubbles cluster they meet at 120° angles, forming the honeycomb-like structure you see in a bath or a pint of beer.</p>`
+  }
+];
+
+bubblefy(items, { background: true, settingsPanel: true });
+</script>
+</body>
+</html>
