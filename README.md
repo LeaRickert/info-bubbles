@@ -35,21 +35,21 @@ bubbles.destroy(); // removes every element, listener and timer it added
 
 Styles are injected automatically, so there is nothing else to import. `body` strings are inserted as HTML, so only pass content you trust.
 
-The container needs a height (the default, `document.body`, needs `html, body { height: 100% }`).
+The container needs a height; if it has none, a console warning says so. The default, `document.body`, needs `html, body { height: 100% }`.
 
 ### Options
 
 | Option | Default | |
 | --- | --- | --- |
 | `container` | `document.body` | Element or selector the bubbles float in. |
-| `settings` | see below | `minSize`, `minSpeed`, `maxSpeed`, `maxSwayRatio`. |
+| `settings` | `DEFAULT_SETTINGS` | `minSize`, `minSpeed`, `maxSpeed`, `maxSwayRatio`, `maxSizeFraction`, and the pop timings `unwrapMs`, `travelMs`, `descDelayMs`. |
 | `layoutToggle` | `true` | Button to switch between floating and static layouts. |
-| `settingsPanel` | `false` | Gear and panel that lets visitors tweak `settings`. |
-| `background` | `false` | Gradient on the container that follows the pointer. |
+| `background` | `false` | Gradient on the container that follows the pointer. Pass an object to change `hue`, `saturation`, `topLightness`, `bottomLightness` or `hueShift` (see `DEFAULT_BACKGROUND`). |
+| `renderBody` | | `(item, index) => string \| Node` to build the modal content yourself, e.g. to sanitise it. |
 | `static` | reduced-motion | Start in the static layout. |
 | `onOpen`, `onClose` | | `(item, index) => void` callbacks. |
 
-The returned instance has `open(index)`, `close()`, `setStatic(on)`, `updateSettings(partial)` and `destroy()`.
+The returned instance has `open(index)`, `close()`, `setStatic(on)`, `updateSettings(partial)`, `updateBackground(partial)` and `destroy()`. `updateSettings` takes effect as bubbles respawn. The demo's gear panel is built on it, and is not part of the package.
 
 ### Theming
 
@@ -76,7 +76,7 @@ Edit the `items` list in `demo/index.html`.
 - **Close:** the × button, Esc, or a click outside the modal. The bubble re-forms at the bottom.
 - **Background:** hue follows the mouse's x position and lightness follows its y position. It's dark at the top and light at the bottom, and it updates only when the mouse is still.
 - **Static layout:** a list on phones and a grid on desktop. It's used automatically when `prefers-reduced-motion` is set, or via the toggle in the top-right.
-- **Settings:** a gear in the bottom-left lets visitors change minimum size, minimum and maximum speed, and the max sway ratio. Changes apply to bubbles as they respawn.
+- **Settings (demo only):** a gear in the bottom-left opens a scrollable panel with every option: bubble size, speed and sway, the pop animation timings, and the background hue, saturation and lightness ranges. Bubble settings apply as bubbles respawn, timings on the next pop, and background changes at once.
 
 ## How it evolved
 
@@ -93,7 +93,7 @@ Each step was a prompt in the chat.
 9. **Wandering paths:** `baseX` is nudged to a random point between its last value and a new one, so bubbles no longer rise in straight lines. It was then adjusted twice. Large swings were capped, and the sway speed was limited relative to rise speed so slow bubbles don't look like they're shaking.
 10. **Better respawn spacing:** discussed several ideas, including column buckets. Testing showed that trying several random positions and choosing among the roomiest few worked much better. Respawns are also kept at least 1.5 seconds apart.
 11. **Visitor controls:** a gear opens a settings panel with debounced sliders. The values only affect bubbles that respawn afterwards, and existing bubbles are left alone.
-12. **Convert to npm-style package:** first stage at transforming into a reusable package format 
+12. **Convert to npm-style package:** first stage at transforming into a reusable package format
 
 ## Files
 

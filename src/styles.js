@@ -221,8 +221,8 @@ export const CSS = `
 .bb-close.bb-show { opacity: 1; pointer-events: auto; }
 .bb-close:hover { background: rgba(255,255,255,.15); }
 
-/* ---------- floating buttons + settings panel ---------- */
-.bb-layout-toggle, .bb-settings-toggle {
+/* ---------- layout toggle ---------- */
+.bb-layout-toggle {
   position: fixed;
   top: 1rem; right: 1.25rem;
   z-index: 9;
@@ -236,46 +236,8 @@ export const CSS = `
   cursor: pointer;
   transition: background .2s;
 }
-.bb-layout-toggle:hover, .bb-settings-toggle:hover { background: rgba(255,255,255,.2); }
-.bb-layout-toggle svg, .bb-settings-toggle svg { width: 1.2rem; height: 1.2rem; }
-.bb-settings-toggle { top: auto; right: auto; left: 1.25rem; bottom: 1rem; }
-.bb-settings-toggle[aria-expanded="true"] { background: rgba(255,255,255,.25); }
-.bb-static-ui .bb-settings-toggle, .bb-static-ui .bb-settings-panel { display: none; }
-
-.bb-settings-panel {
-  position: fixed;
-  left: 1.25rem; bottom: 4rem;
-  z-index: 9;
-  width: min(280px, calc(100vw - 2.5rem));
-  padding: 1rem 1.1rem 1.1rem;
-  color: var(--bb-ink);
-  background: var(--bb-panel-bg);
-  -webkit-backdrop-filter: blur(14px);
-          backdrop-filter: blur(14px);
-  border: 1px solid rgba(255,255,255,.2);
-  border-radius: 16px;
-  box-shadow: 0 12px 40px rgba(0,0,0,.4);
-  font: .85rem/1.3 var(--bb-ui-font);
-  opacity: 0;
-  transform: translateY(8px);
-  visibility: hidden;
-  transition: opacity .25s, transform .25s, visibility .25s;
-}
-.bb-settings-panel.bb-open { opacity: 1; transform: none; visibility: visible; }
-.bb-settings-panel h3 { margin: 0 0 .75rem; font: 600 .9rem var(--bb-ui-font); letter-spacing: .03em; }
-.bb-settings-panel label { display: block; margin-bottom: .8rem; }
-.bb-settings-panel .bb-row { display: flex; justify-content: space-between; margin-bottom: .2rem; }
-.bb-settings-panel output { font-variant-numeric: tabular-nums; opacity: .8; }
-.bb-settings-panel input[type=range] { width: 100%; margin: 0; accent-color: #9fdcff; }
-.bb-settings-panel .bb-note { margin: 0 0 .6rem; opacity: .65; font-size: .75rem; }
-.bb-settings-panel button {
-  width: 100%; padding: .4rem;
-  background: none; color: inherit;
-  border: 1px solid rgba(255,255,255,.4); border-radius: 8px;
-  font: inherit; cursor: pointer;
-}
-.bb-settings-panel button:hover { background: rgba(255,255,255,.12); }
-
+.bb-layout-toggle:hover { background: rgba(255,255,255,.2); }
+.bb-layout-toggle svg { width: 1.2rem; height: 1.2rem; }
 .bb-layout-toggle .bb-icon-float { display: none; }
 .bb-static-ui .bb-layout-toggle .bb-icon-float { display: block; }
 .bb-static-ui .bb-layout-toggle .bb-icon-grid { display: none; }

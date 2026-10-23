@@ -6,17 +6,24 @@ export const DEFAULT_SETTINGS = {
   minSpeed: 18,        // px / second
   maxSpeed: 42,
   maxSwayRatio: 0.6,   // peak sway speed ÷ rise speed, so slow bubbles don't look like they're shaking
+  maxSizeFraction: 0.2, // largest bubble as a fraction of the container width (never below minSize)
+  unwrapMs: 700,       // popped title widens to a single line before it starts to grow
+  travelMs: 2800,      // how slowly the title glides into the modal
+  descDelayMs: 300,    // pause after arriving before the description fades in
 };
 
-const MAX_SIZE_FRAC = 0.20;    // of container width
+/** Pointer-driven background. Hue follows pointer X, lightness follows pointer Y. */
+export const DEFAULT_BACKGROUND = {
+  hue: [190, 300],               // left → right
+  saturation: 58,                // %
+  topLightness: [6, 20],         // top → bottom of the screen, lightness % of the top stop
+  bottomLightness: [30, 55],     // same for the bottom stop
+  hueShift: -15,                 // bottom stop hue offset, for a little depth
+};
+
 
 // Background: pointer X sets the hue, pointer Y sets the lightness.
 // The top colour stays dark and the bottom stays light; each has its own limits.
-const HUE_MIN = 190, HUE_MAX = 300;
-const TOP_L_MIN = 6,  TOP_L_MAX = 20;
-const BOTTOM_L_MIN = 30, BOTTOM_L_MAX = 55;
-const BG_SAT = 58;
-const BG_HUE_SHIFT = -15;       // bottom stop hue offset, for a little depth
 const BG_DEBOUNCE_MS = 500;     // apply only after the pointer has been still this long
 const BG_THROTTLE_MS = 2000;    // and no more often than this
 
@@ -30,17 +37,6 @@ const DRIFT_EVERY = [1.5, 4];   // seconds between course changes (min, max)
 const DRIFT_MAX = 60;           // px: the furthest a single course change can move baseX
 const DRIFT_EASE = 1.2;         // how quickly baseX settles on its new course
 
-const TITLE_TRAVEL_MS = 2800;   // how slowly the title glides to the modal
-const UNWRAP_MS = 700;          // title widens to a single line before it starts to grow
-const DESC_DELAY_MS = 300;      // pause after arriving before the description fades in
-const SETTINGS_DEBOUNCE_MS = 400;
-
-const SETTING_FIELDS = [
-  { key: "minSize",      label: "Minimum size",   min: 100, max: 400, step: 10,   fmt: v => v + "px" },
-  { key: "minSpeed",     label: "Minimum speed",  min: 5,   max: 120, step: 1,    fmt: v => v + " px/s" },
-  { key: "maxSpeed",     label: "Maximum speed",  min: 5,   max: 150, step: 1,    fmt: v => v + " px/s" },
-  { key: "maxSwayRatio", label: "Max sway ratio", min: 0,   max: 2,   step: 0.05, fmt: v => (+v).toFixed(2) },
-];
 
 const ICONS = {
   grid: `<svg class="bb-icon-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -48,9 +44,6 @@ const ICONS = {
     <rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>`,
   float: `<svg class="bb-icon-float" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
     <circle cx="8" cy="15.5" r="5"/><circle cx="16.5" cy="7" r="3.5"/></svg>`,
-  gear: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>`,
 };
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -78,8 +71,10 @@ let instanceCount = 0;
  * @param {string | HTMLElement} [options.container=document.body]
  * @param {Partial<typeof DEFAULT_SETTINGS>} [options.settings]
  * @param {boolean} [options.layoutToggle=true]    button to switch between floating and static layouts
- * @param {boolean} [options.settingsPanel=false]  panel that lets visitors tweak the physics
- * @param {boolean} [options.background=false]     gradient on the container that follows the pointer
+ * @param {boolean | Partial<typeof DEFAULT_BACKGROUND>} [options.background=false]
+ *   gradient on the container that follows the pointer; pass an object to change its colours
+ * @param {(item: object, index: number) => string | Node} [options.renderBody]
+ *   build the modal content yourself, e.g. to sanitise it (default: `item.body`)
  * @param {boolean} [options.static]               start in static layout (default: only if prefers-reduced-motion)
  * @param {(item: object, index: number) => void} [options.onOpen]
  * @param {(item: object, index: number) => void} [options.onClose]
@@ -95,8 +90,7 @@ export function bubblefy(items, options = {}) {
   const isPage = container === document.body;
   const staticHosts = isPage ? [container, document.documentElement] : [container];
 
-  const defaults = { ...DEFAULT_SETTINGS, ...options.settings };
-  const settings = { ...defaults };
+  const settings = { ...DEFAULT_SETTINGS, ...options.settings };
   const id = "bb" + ++instanceCount;
 
   const cleanups = [];
@@ -116,6 +110,7 @@ export function bubblefy(items, options = {}) {
   const height = () => isPage ? window.innerHeight : container.clientHeight;
 
   container.classList.add("bb-container");
+  const bgConfig = { ...DEFAULT_BACKGROUND, ...(typeof options.background === "object" ? options.background : null) };
   if (options.background) container.classList.add("bb-bg");
 
   /* ---------- DOM ---------- */
@@ -131,33 +126,19 @@ export function bubblefy(items, options = {}) {
   const grid = make("div", "bb-grid", container);
 
   const ui = make("div", "bb-ui", document.body);
-  let layoutBtn = null, settingsBtn = null, settingsPanel = null;
+  let layoutBtn = null;
   if (options.layoutToggle !== false) {
     layoutBtn = make("button", "bb-layout-toggle", ui, { type: "button", innerHTML: ICONS.grid + ICONS.float });
     layoutBtn.setAttribute("aria-pressed", "false");
     layoutBtn.setAttribute("aria-label", "Switch to grid layout");
     layoutBtn.title = "Switch layout";
   }
-  if (options.settingsPanel) {
-    settingsBtn = make("button", "bb-settings-toggle", ui, { type: "button", innerHTML: ICONS.gear });
-    settingsBtn.setAttribute("aria-expanded", "false");
-    settingsBtn.setAttribute("aria-controls", id + "-settings");
-    settingsBtn.setAttribute("aria-label", "Bubble settings");
-    settingsBtn.title = "Bubble settings";
-    settingsPanel = make("div", "bb-settings-panel", ui, { id: id + "-settings", role: "group" });
-    settingsPanel.setAttribute("aria-label", "Bubble settings");
-    settingsPanel.innerHTML = `<h3>Bubble settings</h3>
-      <p class="bb-note">Applies to bubbles as they respawn.</p>
-      ${SETTING_FIELDS.map(f => `<label><span class="bb-row">${f.label} <output data-out="${f.key}"></output></span>
-        <input type="range" data-key="${f.key}" min="${f.min}" max="${f.max}" step="${f.step}"></label>`).join("")}
-      <button type="button" data-reset>Reset to defaults</button>`;
-  }
 
   /* ---------- bubbles ---------- */
   const bubbles = [];
   let lastSpawnAt = -Infinity;
 
-  const maxSize = () => Math.max(settings.minSize, width() * MAX_SIZE_FRAC);
+  const maxSize = () => Math.max(settings.minSize, width() * settings.maxSizeFraction);
   const bubbleFontSize = size => Math.round(size * 0.1);
 
   // horizontal range a bubble's centre line may use, leaving room for its sway
@@ -255,11 +236,12 @@ export function bubblefy(items, options = {}) {
   /* ---------- pointer-driven background ---------- */
   const bg = { x: 0.5, y: 0.5 };
   function applyBackground() {
-    const hue  = Math.round(lerp(HUE_MIN, HUE_MAX, bg.x));
-    const topL = Math.round(lerp(TOP_L_MIN, TOP_L_MAX, bg.y));
-    const botL = Math.round(lerp(BOTTOM_L_MIN, BOTTOM_L_MAX, bg.y));
-    container.style.setProperty("--bb-bg-top", `hsl(${hue} ${BG_SAT}% ${topL}%)`);
-    container.style.setProperty("--bb-bg-bottom", `hsl(${hue + BG_HUE_SHIFT} ${BG_SAT}% ${botL}%)`);
+    const c = bgConfig;
+    const hue  = Math.round(lerp(c.hue[0], c.hue[1], bg.x));
+    const topL = Math.round(lerp(c.topLightness[0], c.topLightness[1], bg.y));
+    const botL = Math.round(lerp(c.bottomLightness[0], c.bottomLightness[1], bg.y));
+    container.style.setProperty("--bb-bg-top", `hsl(${hue} ${c.saturation}% ${topL}%)`);
+    container.style.setProperty("--bb-bg-bottom", `hsl(${hue + c.hueShift} ${c.saturation}% ${botL}%)`);
   }
   if (options.background) {
     // Debounce: wait until the pointer has been still for BG_DEBOUNCE_MS.
@@ -281,53 +263,6 @@ export function bubblefy(items, options = {}) {
     });
     cleanups.push(() => { clearTimeout(debounce); clearTimeout(pending); });
     applyBackground();
-  }
-
-  /* ---------- visitor settings panel ---------- */
-  function setSettingsOpen(open) {
-    if (!settingsPanel) return;
-    settingsPanel.classList.toggle("bb-open", open);
-    settingsBtn.setAttribute("aria-expanded", String(open));
-  }
-  if (settingsPanel) {
-    const inputs = {};
-    for (const f of SETTING_FIELDS) {
-      inputs[f.key] = {
-        input: settingsPanel.querySelector(`[data-key="${f.key}"]`),
-        out: settingsPanel.querySelector(`[data-out="${f.key}"]`),
-        fmt: f.fmt,
-      };
-    }
-    const shown = { ...settings };            // what the sliders show; copied to `settings` after the debounce
-    let timer = null;
-    const showValues = () => {
-      for (const [key, { input, out, fmt }] of Object.entries(inputs)) {
-        input.value = shown[key];
-        out.textContent = fmt(shown[key]);
-      }
-    };
-    const commitSoon = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => Object.assign(settings, shown), SETTINGS_DEBOUNCE_MS);
-    };
-    for (const key of Object.keys(inputs)) {
-      on(inputs[key].input, "input", () => {
-        shown[key] = +inputs[key].input.value;
-        // keep min speed ≤ max speed: the slider the visitor isn't touching gets pushed along
-        if (key === "minSpeed" && shown.minSpeed > shown.maxSpeed) shown.maxSpeed = shown.minSpeed;
-        if (key === "maxSpeed" && shown.maxSpeed < shown.minSpeed) shown.minSpeed = shown.maxSpeed;
-        showValues();
-        commitSoon();
-      });
-    }
-    on(settingsPanel.querySelector("[data-reset]"), "click", () => {
-      Object.assign(shown, defaults);
-      showValues();
-      commitSoon();
-    });
-    on(settingsBtn, "click", () => setSettingsOpen(!settingsPanel.classList.contains("bb-open")));
-    cleanups.push(() => clearTimeout(timer));
-    showValues();
   }
 
   /* ---------- layout mode: floating bubbles vs. static list/grid ---------- */
@@ -472,8 +407,9 @@ export function bubblefy(items, options = {}) {
 
     // fill the modal first so the title's landing spot can be measured
     descEl.replaceChildren();
-    if (b.item.body instanceof Node) descEl.appendChild(b.item.body.cloneNode(true));
-    else if (b.item.body) descEl.innerHTML = b.item.body;
+    const body = options.renderBody ? options.renderBody(b.item, b.index) : b.item.body;
+    if (body instanceof Node) descEl.appendChild(options.renderBody ? body : body.cloneNode(true));
+    else if (body) descEl.innerHTML = body;
     descEl.scrollTop = 0;
     slotEl.textContent = b.item.title;
     measureTitleTarget();
@@ -500,8 +436,8 @@ export function bubblefy(items, options = {}) {
     modalEl.classList.add("bb-open");
 
     // phase 1: widen in place until the title is a single line
-    const unwrapMs = reduceMQ.matches ? 0 : UNWRAP_MS;
-    const travelMs = reduceMQ.matches ? 0 : TITLE_TRAVEL_MS;
+    const unwrapMs = reduceMQ.matches ? 0 : settings.unwrapMs;
+    const travelMs = reduceMQ.matches ? 0 : settings.travelMs;
     titleEl.style.transition = `width ${unwrapMs}ms ease`;
     titleEl.style.width = Math.max(oneLine, r.width * 0.68) + "px";
 
@@ -519,7 +455,7 @@ export function bubblefy(items, options = {}) {
     timers.push(setTimeout(() => {
       descEl.classList.add("bb-show");
       closeBtn.classList.add("bb-show");
-    }, unwrapMs + travelMs + DESC_DELAY_MS));
+    }, unwrapMs + travelMs + settings.descDelayMs));
 
     options.onOpen?.(b.item, b.index);
   }
@@ -552,8 +488,19 @@ export function bubblefy(items, options = {}) {
   on(closeBtn, "click", close);
   on(window, "keydown", e => {
     if (e.key !== "Escape") return;
-    if (current) close(); else setSettingsOpen(false);
+    close();
   });
+
+  // A container with no height collapses the layout (everything spawns off-screen), which is almost always missing CSS.
+  // Checked a frame later so stylesheets that are still applying don't cause a false alarm.
+  let destroyed = false;
+  if (!isPage) {
+    requestAnimationFrame(() => {
+      if (!destroyed && container.clientHeight === 0) {
+        console.warn("bubblefy: the container has a height of 0, so no bubbles will be visible. Give it an explicit height (e.g. `height: 100vh`), or `height: 100%` with every ancestor sized too.", container);
+      }
+    });
+  }
 
   return {
     /** Pop the bubble at `index` as if it had been clicked. */
@@ -561,10 +508,16 @@ export function bubblefy(items, options = {}) {
     close,
     /** Switch between the static grid/list (true) and floating bubbles (false). */
     setStatic,
-    /** Change physics settings; applies to bubbles as they respawn. */
+    /** Change settings. Physics apply to bubbles as they respawn; timings apply to the next pop. */
     updateSettings(partial) { Object.assign(settings, partial); },
+    /** Change the background colours (needs the `background` option). */
+    updateBackground(partial) {
+      Object.assign(bgConfig, partial);
+      if (options.background) applyBackground();
+    },
     /** Remove every element, listener and timer this call added. */
     destroy() {
+      destroyed = true;
       cancelAnimationFrame(raf);
       timers.forEach(clearTimeout);
       clearTimeout(closeTimer);

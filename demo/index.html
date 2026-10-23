@@ -7,11 +7,67 @@
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
+
+  /* demo-only settings panel */
+  #settings-toggle {
+    position: fixed; left: 1.25rem; bottom: 1rem; z-index: 9;
+    width: 2.5rem; height: 2.5rem; padding: 0;
+    display: grid; place-items: center;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.5);
+    border-radius: 50%;
+    color: var(--bb-ink);
+    cursor: pointer;
+    transition: background .2s;
+  }
+  #settings-toggle:hover { background: rgba(255,255,255,.2); }
+  #settings-toggle[aria-expanded="true"] { background: rgba(255,255,255,.25); }
+  #settings-toggle svg { width: 1.2rem; height: 1.2rem; }
+  #settings-panel {
+    position: fixed; left: 1.25rem; bottom: 4rem; z-index: 9;
+    width: min(300px, calc(100vw - 2.5rem));
+    padding: 1rem 1.1rem 1.1rem;
+    color: var(--bb-ink);
+    background: var(--bb-panel-bg);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    font: .85rem/1.3 var(--bb-ui-font);
+    max-height: calc(100dvh - 5.5rem); overflow-y: auto; overscroll-behavior: contain;
+    opacity: 0; transform: translateY(8px); visibility: hidden;
+    transition: opacity .25s, transform .25s, visibility .25s;
+  }
+  #settings-panel.open { opacity: 1; transform: none; visibility: visible; }
+  #settings-panel h3 { margin: 0 0 .75rem; font: 600 .9rem var(--bb-ui-font); letter-spacing: .03em; }
+  #settings-panel .note { margin: 0 0 .6rem; opacity: .65; font-size: .75rem; }
+  #settings-panel fieldset { border: 0; margin: 0 0 .4rem; padding: 0; }
+  #settings-panel legend { padding: 0; margin: .4rem 0 .6rem; font-weight: 600; letter-spacing: .03em; opacity: .9; }
+  #settings-panel label { display: block; margin-bottom: .8rem; }
+  #settings-panel .row { display: flex; justify-content: space-between; margin-bottom: .2rem; }
+  #settings-panel output { font-variant-numeric: tabular-nums; opacity: .8; }
+  #settings-panel input[type=range] { width: 100%; margin: 0; accent-color: #9fdcff; }
+  #settings-panel button {
+    width: 100%; padding: .4rem;
+    background: none; color: inherit;
+    border: 1px solid rgba(255,255,255,.4); border-radius: 8px;
+    font: inherit; cursor: pointer;
+  }
+  #settings-panel button:hover { background: rgba(255,255,255,.12); }
+  .bb-static #settings-toggle, .bb-static #settings-panel { display: none; }
 </style>
 </head>
 <body>
+<div id="sky"></div>
+<button id="settings-toggle" aria-expanded="false" aria-controls="settings-panel" aria-label="Bubble settings" title="Bubble settings">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>
+  </svg>
+</button>
+<div id="settings-panel" role="group" aria-label="Bubble settings"></div>
 <script type="module">
-import { bubblefy } from "../src/index.js";
+import { bubblefy, DEFAULT_SETTINGS, DEFAULT_BACKGROUND } from "../src/index.js";
 
 // `body` is plain HTML, so it can mix paragraphs, images, links, etc.
 // `image` is an optional featured image shown faintly inside the bubble.
@@ -54,7 +110,95 @@ const items = [
   }
 ];
 
-bubblefy(items, { background: true, settingsPanel: true });
+const bubbles = bubblefy(items, { background: true });
+
+/* ---------- demo-only settings panel: every change goes straight to the instance ---------- */
+const pct = v => v + "%";
+const deg = v => v + "°";
+const GROUPS = [
+  { title: "Bubbles", note: "Applies to bubbles as they respawn.", fields: [
+    { target: "settings", key: "minSize", label: "Minimum size", min: 100, max: 400, step: 10, fmt: v => v + "px" },
+    { target: "settings", key: "maxSizeFraction", label: "Maximum size (of width)", min: 0.1, max: 0.5, step: 0.01, fmt: v => Math.round(v * 100) + "%" },
+    { target: "settings", key: "minSpeed", label: "Minimum speed", min: 5, max: 120, step: 1, fmt: v => v + " px/s" },
+    { target: "settings", key: "maxSpeed", label: "Maximum speed", min: 5, max: 150, step: 1, fmt: v => v + " px/s" },
+    { target: "settings", key: "maxSwayRatio", label: "Max sway ratio", min: 0, max: 2, step: 0.05, fmt: v => (+v).toFixed(2) },
+  ] },
+  { title: "Pop animation", note: "Applies the next time a bubble is popped.", fields: [
+    { target: "settings", key: "unwrapMs", label: "Title unwrap", min: 0, max: 2000, step: 50, fmt: v => v + "ms" },
+    { target: "settings", key: "travelMs", label: "Title travel", min: 0, max: 6000, step: 100, fmt: v => v + "ms" },
+    { target: "settings", key: "descDelayMs", label: "Description delay", min: 0, max: 2000, step: 50, fmt: v => v + "ms" },
+  ] },
+  { title: "Background", note: "Hue follows the pointer's x, lightness follows its y. Changes apply at once.", fields: [
+    { target: "background", key: "hue", index: 0, label: "Hue, left", min: 0, max: 360, step: 1, fmt: deg },
+    { target: "background", key: "hue", index: 1, label: "Hue, right", min: 0, max: 360, step: 1, fmt: deg },
+    { target: "background", key: "saturation", label: "Saturation", min: 0, max: 100, step: 1, fmt: pct },
+    { target: "background", key: "topLightness", index: 0, label: "Top lightness, upper", min: 0, max: 100, step: 1, fmt: pct },
+    { target: "background", key: "topLightness", index: 1, label: "Top lightness, lower", min: 0, max: 100, step: 1, fmt: pct },
+    { target: "background", key: "bottomLightness", index: 0, label: "Bottom lightness, upper", min: 0, max: 100, step: 1, fmt: pct },
+    { target: "background", key: "bottomLightness", index: 1, label: "Bottom lightness, lower", min: 0, max: 100, step: 1, fmt: pct },
+    { target: "background", key: "hueShift", label: "Bottom hue shift", min: -90, max: 90, step: 1, fmt: deg },
+  ] },
+];
+
+const panel = document.getElementById("settings-panel");
+const toggle = document.getElementById("settings-toggle");
+const initial = { settings: DEFAULT_SETTINGS, background: DEFAULT_BACKGROUND };
+const values = structuredClone(initial);
+const fieldId = f => f.target + "-" + f.key + (f.index ?? "");
+const read = f => f.index === undefined ? values[f.target][f.key] : values[f.target][f.key][f.index];
+const write = (f, v) => { if (f.index === undefined) values[f.target][f.key] = v; else values[f.target][f.key][f.index] = v; };
+
+panel.innerHTML = "<h3>Bubble settings</h3>" + GROUPS.map(g => `
+  <fieldset><legend>${g.title}</legend><p class="note">${g.note}</p>
+  ${g.fields.map(f => `<label><span class="row">${f.label} <output id="out-${fieldId(f)}"></output></span>
+    <input type="range" id="in-${fieldId(f)}" min="${f.min}" max="${f.max}" step="${f.step}"></label>`).join("")}
+  </fieldset>`).join("") + '<button type="button" id="settings-reset">Reset to defaults</button>';
+
+const fields = GROUPS.flatMap(g => g.fields);
+const input = f => document.getElementById("in-" + fieldId(f));
+const find = (target, key, index) => fields.find(f => f.target === target && f.key === key && f.index === index);
+
+function show() {
+  for (const f of fields) {
+    input(f).value = read(f);
+    document.getElementById("out-" + fieldId(f)).textContent = f.fmt(read(f));
+  }
+}
+function apply(f) {
+  show();
+  if (!f || f.target === "settings") bubbles.updateSettings(values.settings);
+  if (!f || f.target === "background") bubbles.updateBackground(values.background);
+}
+
+// If one end of a min/max pair crosses the other, the end the visitor isn't touching is pushed along.
+// (Hue is left out: its two ends are a left-to-right range and may run either way.)
+const LINKED = [
+  [find("settings", "minSpeed"), find("settings", "maxSpeed")],
+  [find("background", "topLightness", 0), find("background", "topLightness", 1)],
+  [find("background", "bottomLightness", 0), find("background", "bottomLightness", 1)],
+];
+
+for (const f of fields) {
+  input(f).addEventListener("input", () => {
+    write(f, +input(f).value);
+    for (const [lo, hi] of LINKED) {
+      if (f === lo && read(lo) > read(hi)) write(hi, read(lo));
+      if (f === hi && read(hi) < read(lo)) write(lo, read(hi));
+    }
+    apply(f);
+  });
+}
+document.getElementById("settings-reset").addEventListener("click", () => {
+  Object.assign(values, structuredClone(initial));
+  apply();
+});
+function setOpen(open) {
+  panel.classList.toggle("open", open);
+  toggle.setAttribute("aria-expanded", String(open));
+}
+toggle.addEventListener("click", () => setOpen(!panel.classList.contains("open")));
+window.addEventListener("keydown", e => { if (e.key === "Escape") setOpen(false); });
+show();
 </script>
 </body>
 </html>
